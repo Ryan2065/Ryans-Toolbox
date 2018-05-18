@@ -1,6 +1,8 @@
 ﻿<#
 
 Written by Ryan Ephgrave
+Modified to work with a VMware Hypervisor by Charlton Stanley
+
 
 This tool will create a snapshot of the VM and then install all the applications selected, 
 reverting to the previous snapshot after each install. Results will be logged in the same folder in
@@ -34,9 +36,9 @@ If(!([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]:
 	Exit
 }
 
-Try { Import-Module Hyper-V }
+Try { Import-Module  VMware.VimAutomation.Core }
 Catch { 
-    $Popup.Popup("This must be run on the Hyper-V machine with the Hyper-V Cmdlets!",0,"Error",16)
+    $Popup.Popup("This must be run on a machine with the VMware view Cmdlets!",0,"Error",16)
     Exit
 }
 
@@ -220,6 +222,8 @@ Function LoadWPF {
 
 '@
 
+Connect-VIServer vcenter02 -WarningAction SilentlyContinue
+
 LoadWPF -XAML $XAML
 
 $LoadApplications.Add_Click({
@@ -307,7 +311,7 @@ $StartBtn.Add_Click({
 
 $Window.ShowDialog() | Out-Null
 
-Try { Checkpoint-VM -Name $Script:strVMName -SnapshotName "TestAppScript-Original" }
+Try { New-Snapshot -VM $Script:strVMName -Name "TestAppScript-Original" -Memory:$true -Quiesce:$true  }
 catch { 
     Log -Message "Could not create VM checkpoint" -ErrorMessage $_.Exception.Message -LogFile $LogFile
     Exit
@@ -324,7 +328,7 @@ foreach ($instance in $Script:AppList) {
     $StopLoop = $false
     Do {
         $Script:VMObject = Get-VM -Name $Script:strVMName
-        If ($VMObject.State -eq "Running") {
+        If ($VMObject.Powerstate -eq "PoweredOn") {
             Start-Sleep 10
             $StopLoop = $true
         }
@@ -444,7 +448,7 @@ foreach ($instance in $Script:AppList) {
         Try {
             Log -Message "$instance - Creating checkpoint" -LogFile $LogFile
             $CheckpointName = "App-" + $instance
-            Checkpoint-VM -Name $Script:strVMName -SnapshotName $CheckpointName
+            New-Snapshot -VM $Script:strVMName -Name $CheckpointName -Memory:$true -Quiesce:$true
             Log -Message "$instance - Created checkpoint!" -LogFile $LogFile
         }
         catch { Log -Message "$instance - Error creating checkpoint" -ErrorMessage $_.Exception.Message -LogFile $LogFile }
@@ -456,13 +460,15 @@ foreach ($instance in $Script:AppList) {
             Log -Message "Saving $instance log files to $AppLogDirectory" -LogFile $LogFile
             $CopyPath = "\\" + $Script:strCompName + "\c$\windows\ccm\logs"
             Copy-Item $CopyPath $AppLogDirectory -Recurse -Force
+            $PSAppDeployLogDir = "\\" + $Script:strCompName + "\c$\windows\logs\Software"
+            Copy-Item $PSAppDeployLogDir $AppLogDirectory -Recurse -Force
         }
         catch { Log -Message "$instance - Error copying log files!" -ErrorMessage $_.Exception.Message -LogFile $LogFile }
     }
 
     Try {
         Log -Message "Reverting VM to previous checkpoint" -LogFile $LogFile
-        Restore-VMSnapshot -VMName $Script:strVMName -Name "TestAppScript-Original" -Confirm:$false
+        Set-VM -VM $Script:strVMName -Snapshot "TestAppScript-Original" -Confirm:$false
         Start-Sleep 10
     }
     catch {
@@ -470,7 +476,7 @@ foreach ($instance in $Script:AppList) {
         exit
     }
 }
-
+Disconnect-VIServer -Confirm:$false
 Log -Message "Finished!" -Type 2 -LogFile $LogFile
 
 
