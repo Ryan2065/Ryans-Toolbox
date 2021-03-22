@@ -322,6 +322,7 @@ foreach ($instance in $Script:AppList) {
     $MakeCheckPoint = $false
     $CopyLogFiles = $false
     $StopLoop = $false
+    $Count = 0
     Do {
         $Script:VMObject = Get-VM -Name $Script:strVMName
         If ($VMObject.State -eq "Running") {
@@ -329,6 +330,7 @@ foreach ($instance in $Script:AppList) {
             $StopLoop = $true
         }
         else { 
+            $VMObject | Start-VM
             Start-Sleep 10
             $Count++
             If ($Count -gt 10) { 
